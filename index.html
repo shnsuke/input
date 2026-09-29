@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>インプット記録</title>
+  <meta name="description" content="読んだ・見た・聞いたインプットを記録して、あとからキーワードや日付で検索できるアプリ">
+  <meta name="theme-color" content="#2f6fdb">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>インプット記録</h1>
+    <div class="status">
+      <span id="net-status" class="badge"></span>
+      <span id="pending-status" class="badge"></span>
+      <button id="sync-btn" class="btn small" type="button">同期</button>
+      <button id="settings-btn" class="btn small ghost" type="button" aria-label="設定">⚙</button>
+    </div>
+  </header>
+
+  <div id="banner" class="banner" hidden></div>
+
+  <main>
+    <section class="card" aria-labelledby="form-title">
+      <h2 id="form-title">記録する</h2>
+      <form id="entry-form" autocomplete="off">
+        <input type="hidden" name="id">
+        <div class="row">
+          <label class="field date-field">日付
+            <input type="date" name="date" required>
+          </label>
+          <label class="field type-field">種類
+            <select name="type">
+              <option>本</option>
+              <option>記事</option>
+              <option>動画</option>
+              <option>音声</option>
+              <option>講座・セミナー</option>
+              <option>会話</option>
+              <option>その他</option>
+            </select>
+          </label>
+        </div>
+        <label class="field">タイトル
+          <input type="text" name="title" required placeholder="例: 〇〇という本">
+        </label>
+        <label class="field">内容・メモ
+          <textarea name="body" rows="5" placeholder="学んだこと、気づき、引用など"></textarea>
+        </label>
+        <div class="row">
+          <label class="field grow">タグ（スペースかカンマ区切り）
+            <input type="text" name="tags" placeholder="例: マーケティング 習慣">
+          </label>
+          <label class="field grow">URL・出典
+            <input type="text" name="url" placeholder="https://…">
+          </label>
+        </div>
+        <div class="actions">
+          <button type="submit" class="btn primary" id="save-btn">保存</button>
+          <button type="button" class="btn ghost" id="cancel-edit" hidden>編集をやめる</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card" aria-labelledby="search-title">
+      <h2 id="search-title">検索</h2>
+      <form id="search-form" class="search" role="search" onsubmit="return false">
+        <input type="search" name="q" placeholder="キーワード（スペースで AND 検索）" aria-label="キーワード">
+        <div class="row">
+          <label class="field">開始日<input type="date" name="from"></label>
+          <label class="field">終了日<input type="date" name="to"></label>
+          <label class="field">種類
+            <select name="type">
+              <option value="">すべて</option>
+              <option>本</option>
+              <option>記事</option>
+              <option>動画</option>
+              <option>音声</option>
+              <option>講座・セミナー</option>
+              <option>会話</option>
+              <option>その他</option>
+            </select>
+          </label>
+        </div>
+        <div class="quick">
+          <button type="button" class="chip" data-range="7">1週間</button>
+          <button type="button" class="chip" data-range="30">1か月</button>
+          <button type="button" class="chip" data-range="365">1年</button>
+          <button type="button" class="chip" data-range="clear">条件をクリア</button>
+        </div>
+        <div id="tag-cloud" class="quick"></div>
+      </form>
+      <p id="result-count" class="muted"></p>
+      <ul id="results" class="results"></ul>
+    </section>
+  </main>
+
+  <dialog id="settings">
+    <form method="dialog" class="settings">
+      <h2>設定</h2>
+      <h3>Google ドライブ連携</h3>
+      <p class="muted">データはマイドライブの「InputLog/input-log.json」に保存されます。</p>
+      <label class="field">OAuth クライアントID
+        <input type="text" id="client-id" placeholder="xxxxxxxx.apps.googleusercontent.com">
+      </label>
+      <p id="account-status" class="muted"></p>
+      <div class="actions">
+        <button type="button" class="btn primary" id="connect-btn">Google に接続</button>
+        <button type="button" class="btn ghost" id="disconnect-btn">接続を解除</button>
+      </div>
+      <h3>バックアップ</h3>
+      <div class="actions">
+        <button type="button" class="btn" id="export-btn">JSON を書き出す</button>
+        <label class="btn">JSON を読み込む<input type="file" id="import-file" accept="application/json,.json" hidden></label>
+      </div>
+      <div class="actions end">
+        <button class="btn ghost" value="close">閉じる</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

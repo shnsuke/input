@@ -59,7 +59,7 @@ export function parseQuery(q) {
 }
 
 export function entryHaystack(e) {
-  return normalize([e.title, e.body, (e.tags || []).join(' '), e.url, e.type].join('\n'));
+  return normalize([e.title, e.body, (e.tags || []).join(' '), e.url, e.type, (e.attachments || []).map((a) => a.name).join(' ')].join('\n'));
 }
 
 /**

@@ -60,6 +60,13 @@
             <input type="text" name="url" placeholder="https://…">
           </label>
         </div>
+        <div class="field">写真・動画
+          <label class="btn file-add no-reconnect">＋ 写真・動画を追加
+            <input type="file" id="media-input" accept="image/*,video/*" multiple hidden>
+          </label>
+          <ul id="form-media" class="form-media"></ul>
+          <span class="muted">写真は自動で縮小して保存します。動画は元のサイズのまま保存されるので、アップロードはWi-Fi推奨です。</span>
+        </div>
         <div class="actions">
           <button type="submit" class="btn primary" id="save-btn">保存</button>
           <button type="button" class="btn ghost" id="cancel-edit" hidden>編集をやめる</button>

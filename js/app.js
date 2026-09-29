@@ -2,6 +2,7 @@ import * as db from './db.js';
 import * as drive from './drive.js';
 import { syncNow, isSyncing } from './sync.js';
 import { GOOGLE_CLIENT_ID } from './config.js';
+import { MAX_FILE_BYTES, isImage, isVideo, formatSize, prepareImage } from './media.js';
 import { newId, todayString, parseTags, filterEntries, parseQuery, highlight, escapeHtml, parseRemoteFile, buildRemoteFile, toRemote } from './core.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -11,6 +12,9 @@ const AUTO_SYNC_MS = 5 * 60 * 1000;
 let entries = [];
 let activeTag = '';
 let lastSyncAt = null;
+let formMedia = []; // フォームで編集中の添付 [{id,name,type,size,driveId?,blob?}]
+let originalMedia = []; // 編集開始時点の添付（削除された分を判定するため）
+const urlCache = new Map(); // 添付id → 表示用 Blob URL
 
 const form = $('#entry-form');
 const searchForm = $('#search-form');
@@ -104,7 +108,8 @@ async function runSync({ quiet = true } = {}) {
   try {
     const r = await p;
     lastSyncAt = r.at;
-    if (!quiet || r.pulled) toast(r.pulled ? `同期しました（${r.pulled}件を取り込み）` : '同期しました');
+    if (r.media?.failed) toast(`写真・動画 ${r.media.failed} 件をアップロードできませんでした（${r.media.error}）。次回の同期で再試行します`);
+    else if (!quiet || r.pulled) toast(r.pulled ? `同期しました（${r.pulled}件を取り込み）` : '同期しました');
   } catch (e) {
     if (!quiet || !(e instanceof drive.AuthRequiredError)) toast(e.message);
     console.warn(e);
@@ -147,6 +152,9 @@ function resetForm() {
   F.date.value = todayString();
   $('#save-btn').textContent = '保存';
   $('#cancel-edit').hidden = true;
+  formMedia = [];
+  originalMedia = [];
+  renderFormMedia();
 }
 
 form.addEventListener('submit', async (ev) => {
@@ -162,13 +170,17 @@ form.addEventListener('submit', async (ev) => {
     body: F.body.value.trim(),
     tags: parseTags(F.tags.value),
     url: F.url.value.trim(),
+    attachments: formMedia.map(({ id, name, type, size, driveId }) => ({ id, name, type, size, ...(driveId ? { driveId } : {}) })),
     createdAt: prev?.createdAt || now,
     updatedAt: now,
     deleted: false,
     dirty: true,
   };
   if (!entry.title) return toast('タイトルを入力してください');
+  // 写真・動画の本体を先に保存してから記録を保存する
+  for (const m of formMedia) if (m.blob) await db.putFile({ id: m.id, name: m.name, type: m.type, size: m.size, blob: m.blob });
   await db.putEntry(entry);
+  await discardMedia(originalMedia.filter((o) => !formMedia.some((m) => m.id === o.id)));
   resetForm();
   toast(navigator.onLine ? '保存しました' : '端末に保存しました（オンライン復帰時に同期します）');
   await reload();
@@ -185,6 +197,9 @@ function startEdit(e) {
   F.body.value = e.body || '';
   F.tags.value = (e.tags || []).join(' ');
   F.url.value = e.url || '';
+  formMedia = (e.attachments || []).map((a) => ({ ...a }));
+  originalMedia = (e.attachments || []).map((a) => ({ ...a }));
+  renderFormMedia();
   $('#save-btn').textContent = '更新';
   $('#cancel-edit').hidden = false;
   form.scrollIntoView({ behavior: 'smooth' });
@@ -194,11 +209,123 @@ function startEdit(e) {
 async function removeEntry(e) {
   if (!confirm(`「${e.title}」を削除しますか？`)) return;
   // 他の端末にも削除を伝えるため、中身を消した「削除済み」記録として残す
+  await discardMedia(e.attachments || []);
   await db.putEntry({ id: e.id, deleted: true, createdAt: e.createdAt, updatedAt: new Date().toISOString(), dirty: true, title: '', body: '', tags: [], date: e.date });
   if (F.id.value === e.id) resetForm();
   toast('削除しました');
   await reload();
   scheduleSync();
+}
+
+// ------------------------------------------------------------ 写真・動画
+
+function newAttachmentId() {
+  return newId().replace(/-/g, '').slice(0, 16);
+}
+
+/** 削除した添付の本体を端末から消し、Drive 側は次回の同期で消す */
+async function discardMedia(list) {
+  if (!list.length) return;
+  const pending = (await db.getMeta('pendingDeletes')) || [];
+  for (const a of list) {
+    if (a.driveId) pending.push(a.driveId);
+    await db.deleteFile(a.id);
+    const u = urlCache.get(a.id);
+    if (u) URL.revokeObjectURL(u);
+    urlCache.delete(a.id);
+  }
+  await db.setMeta('pendingDeletes', pending);
+}
+
+$('#media-input').addEventListener('change', async (ev) => {
+  const files = [...ev.target.files];
+  ev.target.value = '';
+  for (const f of files) {
+    if (!isImage(f.type) && !isVideo(f.type)) {
+      toast(`「${f.name}」は写真・動画ではないため追加できません`);
+      continue;
+    }
+    if (f.size > MAX_FILE_BYTES) {
+      toast(`「${f.name}」は大きすぎます（上限 ${formatSize(MAX_FILE_BYTES)}）`);
+      continue;
+    }
+    const blob = await prepareImage(f);
+    formMedia.push({ id: newAttachmentId(), name: blob.name || f.name, type: blob.type || f.type, size: blob.size, blob });
+  }
+  renderFormMedia();
+});
+
+function renderFormMedia() {
+  const ul = $('#form-media');
+  ul.innerHTML = '';
+  for (const m of formMedia) {
+    const li = document.createElement('li');
+    const url = m.blob ? URL.createObjectURL(m.blob) : urlCache.get(m.id);
+    const thumb = isImage(m.type) && url ? Object.assign(new Image(), { src: url, alt: '' }) : Object.assign(document.createElement('span'), { textContent: isVideo(m.type) ? '🎬' : '📎' });
+    thumb.className = 'thumb';
+    if (thumb.tagName === 'IMG') thumb.onload = () => m.blob && URL.revokeObjectURL(url);
+    li.append(thumb);
+    li.insertAdjacentHTML('beforeend', `<span class="name">${escapeHtml(m.name)}</span><span class="size">${formatSize(m.size)}</span>`);
+    const rm = document.createElement('button');
+    rm.type = 'button';
+    rm.className = 'btn small ghost';
+    rm.textContent = '外す';
+    rm.onclick = () => {
+      formMedia = formMedia.filter((x) => x !== m);
+      renderFormMedia();
+    };
+    li.append(rm);
+    ul.append(li);
+  }
+}
+
+/** 記録に添付された1件を表示。この端末に本体がなければ Drive から取得するボタンを出す */
+async function showAttachment(item, a) {
+  item.className = 'media-item';
+  let url = urlCache.get(a.id);
+  if (!url) {
+    const f = await db.getFile(a.id);
+    if (f) {
+      url = URL.createObjectURL(f.blob);
+      urlCache.set(a.id, url);
+    }
+  }
+  item.innerHTML = '';
+  if (!url) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip';
+    b.dataset.fetch = a.id;
+    b.textContent = a.driveId ? `☁ ${a.name}（${formatSize(a.size)}）を取得` : `${a.name}（元の端末で同期すると取得できます）`;
+    b.disabled = !a.driveId;
+    b.onclick = () => fetchAttachment(item, a);
+    item.append(b);
+    return;
+  }
+  if (isImage(a.type)) {
+    const img = Object.assign(new Image(), { src: url, alt: a.name, loading: 'lazy' });
+    img.onclick = () => window.open(url, '_blank');
+    item.append(img);
+  } else if (isVideo(a.type)) {
+    const v = Object.assign(document.createElement('video'), { src: url, controls: true, preload: 'metadata', playsInline: true });
+    item.append(v);
+  } else {
+    item.append(Object.assign(document.createElement('a'), { href: url, download: a.name, textContent: a.name }));
+  }
+  item.insertAdjacentHTML('beforeend', `<div class="cap">${escapeHtml(a.name)} · ${formatSize(a.size)}</div>`);
+}
+
+async function fetchAttachment(item, a) {
+  if (!navigator.onLine) return toast('オフラインのため取得できません');
+  try {
+    if (!drive.hasValidToken()) await drive.signIn(clientId());
+    toast('取得中…');
+    const blob = await drive.downloadMedia(a.driveId);
+    await db.putFile({ id: a.id, name: a.name, type: a.type, size: blob.size, blob: new Blob([blob], { type: a.type }) });
+    await showAttachment(item, a);
+  } catch (e) {
+    toast('取得できませんでした: ' + e.message);
+  }
 }
 
 // ------------------------------------------------------------ 検索
@@ -242,12 +369,15 @@ function renderResults() {
       <div class="title">${highlight(e.title, terms)}</div>
       ${e.body ? `<div class="body clamp">${highlight(e.body, terms)}</div>` : ''}
       ${url}
+      ${(e.attachments || []).length ? '<div class="media"></div>' : ''}
       <div class="ops">
         <button type="button" class="btn small ghost" data-op="edit">編集</button>
         <button type="button" class="btn small ghost" data-op="delete">削除</button>
       </div>`;
     li.querySelector('[data-op=edit]').onclick = () => startEdit(e);
     li.querySelector('[data-op=delete]').onclick = () => removeEntry(e);
+    const box = li.querySelector('.media');
+    if (box) for (const a of e.attachments) showAttachment(box.appendChild(document.createElement('div')), a);
     const body = li.querySelector('.body');
     if (body) body.onclick = () => body.classList.toggle('clamp');
     li.querySelectorAll('[data-tag]').forEach((b) => (b.onclick = () => setTag(b.dataset.tag)));
@@ -307,7 +437,7 @@ document.addEventListener(
   'click',
   async (ev) => {
     if (reconnecting || !navigator.onLine || !clientId() || !drive.wasConnected() || drive.hasValidToken()) return;
-    if (ev.target.closest?.('#sync-btn, #banner-sync, #settings, #settings-btn')) return;
+    if (ev.target.closest?.('#sync-btn, #banner-sync, #settings, #settings-btn, .no-reconnect, [data-fetch]')) return;
     if (Date.now() - lastReconnectAt < 30_000) return;
     reconnecting = true;
     lastReconnectAt = Date.now();

@@ -127,3 +127,16 @@ dialog::backdrop { background: rgb(0 0 0 / .4); }
 }
 .toast.show { opacity: 1; }
 @media (min-width: 760px) { .banner { margin: 12px auto 0; } }
+
+.file-add { align-self: flex-start; display: inline-block; color: var(--text); }
+.form-media { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.form-media li { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--text); }
+.form-media .thumb { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; background: var(--bg); border: 1px solid var(--line); flex: none; display: grid; place-items: center; }
+.form-media .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.form-media .size { color: var(--muted); white-space: nowrap; }
+
+.media { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
+.media-item { max-width: 100%; }
+.media-item img, .media-item video { display: block; max-width: 100%; max-height: 320px; border-radius: 8px; background: #000; cursor: zoom-in; }
+.media-item video { cursor: default; }
+.media-item .cap { font-size: .75rem; color: var(--muted); overflow-wrap: anywhere; }

@@ -1,6 +1,6 @@
 // アプリ本体をキャッシュしてオフラインでも起動できるようにする
 // ファイルを変更したら CACHE のバージョンを上げること
-const CACHE = 'input-log-v3';
+const CACHE = 'input-log-v4';
 const ASSETS = [
   './',
   'index.html',
@@ -14,6 +14,7 @@ const ASSETS = [
   'js/db.js',
   'js/drive.js',
   'js/sync.js',
+  'js/media.js',
   'js/config.js',
 ];
 

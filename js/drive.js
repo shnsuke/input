@@ -74,6 +74,7 @@ export async function signIn(clientId, { prompt = '' } = {}) {
 }
 
 export function signOut() {
+  folderCache = null;
   const t = readToken();
   localStorage.removeItem(TOKEN_KEY);
   if (t && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(t.accessToken, () => {});
@@ -106,7 +107,15 @@ async function findOne(query) {
   return files[0] || null;
 }
 
+let folderCache;
+
 async function ensureFolder() {
+  if (folderCache) return folderCache;
+  folderCache = await findOrCreateFolder();
+  return folderCache;
+}
+
+async function findOrCreateFolder() {
   const found = await findOne(`name='${FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
   if (found) return found.id;
   const res = await api(`${API}/files?fields=id`, {
@@ -164,4 +173,55 @@ export async function updateDataFile(fileId, content) {
     body: content,
   });
   return res.json();
+}
+
+// ---------------------------------------------------------------- 写真・動画
+
+const RESUMABLE_THRESHOLD = 5 * 1024 * 1024;
+
+/** 写真・動画を InputLog フォルダにアップロードし、DriveのファイルIDを返す */
+export async function uploadMedia(blob, name, mime) {
+  const folderId = await ensureFolder();
+  const meta = { name, mimeType: mime, parents: [folderId] };
+  if (blob.size > RESUMABLE_THRESHOLD) {
+    // 大きいファイル（動画など）は再開可能アップロード
+    const init = await api(`${UPLOAD}/files?uploadType=resumable&fields=id`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': mime, 'X-Upload-Content-Length': String(blob.size) },
+      body: JSON.stringify(meta),
+    });
+    const location = init.headers.get('Location');
+    if (location) {
+      const res = await fetch(location, { method: 'PUT', headers: { 'Content-Type': mime }, body: blob });
+      if (!res.ok) throw new Error(`アップロードに失敗しました (${res.status})`);
+      return (await res.json()).id;
+    }
+    // ブラウザから Location ヘッダーを読めない場合は、下の通常アップロードで送る
+  }
+  const boundary = 'inputlog' + Math.random().toString(36).slice(2);
+  const body = new Blob([
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${boundary}\r\nContent-Type: ${mime}\r\n\r\n`,
+    blob,
+    `\r\n--${boundary}--`,
+  ]);
+  const res = await api(`${UPLOAD}/files?uploadType=multipart&fields=id`, {
+    method: 'POST',
+    headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+    body,
+  });
+  return (await res.json()).id;
+}
+
+export async function downloadMedia(fileId) {
+  const res = await api(`${API}/files/${fileId}?alt=media`);
+  return res.blob();
+}
+
+/** 見つからない(404)場合も成功扱い */
+export async function deleteMedia(fileId) {
+  try {
+    await api(`${API}/files/${fileId}`, { method: 'DELETE' });
+  } catch (e) {
+    if (e.status !== 404) throw e;
+  }
 }

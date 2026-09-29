@@ -1,7 +1,7 @@
 // IndexedDB ラッパー（端末内の保存先。オフラインでもここに書き込む）
 
 const DB_NAME = 'input-log';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 let dbPromise;
 
 function open() {
@@ -12,6 +12,8 @@ function open() {
         const db = req.result;
         if (!db.objectStoreNames.contains('entries')) db.createObjectStore('entries', { keyPath: 'id' });
         if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta');
+        // 写真・動画の本体（Blob）。記録側には id とメタ情報だけを持つ
+        if (!db.objectStoreNames.contains('files')) db.createObjectStore('files', { keyPath: 'id' });
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -44,3 +46,7 @@ export const putEntries = (list) =>
 
 export const getMeta = (key) => tx('meta', 'readonly', (s) => s.get(key));
 export const setMeta = (key, value) => tx('meta', 'readwrite', (s) => s.put(value, key));
+
+export const getFile = (id) => tx('files', 'readonly', (s) => s.get(id));
+export const putFile = (f) => tx('files', 'readwrite', (s) => s.put(f));
+export const deleteFile = (id) => tx('files', 'readwrite', (s) => s.delete(id));

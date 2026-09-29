@@ -73,3 +73,8 @@ test('parseRemoteFile / buildRemoteFile', () => {
   assert.equal(parseRemoteFile(f)[0].id, 'a');
   assert.throws(() => parseRemoteFile('{"x":1}'));
 });
+
+test('filterEntries: 添付ファイル名も検索対象', () => {
+  const list = [E({ id: '1', title: 'メモ', attachments: [{ id: 'a', name: '会議ホワイトボード.jpg', type: 'image/jpeg', size: 1 }] }), E({ id: '2', title: '別' })];
+  assert.deepEqual(filterEntries(list, { q: 'ほわいとぼーど' }).map((e) => e.id), ['1']);
+});

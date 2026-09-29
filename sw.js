@@ -1,6 +1,6 @@
 // アプリ本体をキャッシュしてオフラインでも起動できるようにする
 // ファイルを変更したら CACHE のバージョンを上げること
-const CACHE = 'input-log-v2';
+const CACHE = 'input-log-v3';
 const ASSETS = [
   './',
   'index.html',

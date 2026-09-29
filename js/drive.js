@@ -14,6 +14,10 @@ let gisPromise;
 let tokenClient;
 let tokenClientId;
 
+export function preloadGis() {
+  return loadGis().catch(() => {});
+}
+
 function loadGis() {
   if (window.google?.accounts?.oauth2) return Promise.resolve();
   if (!gisPromise) {

@@ -296,6 +296,34 @@ searchForm.querySelectorAll('[data-range]').forEach((b) => {
   });
 });
 
+/**
+ * トークン切れの状態で画面をタップしたとき、自動で再接続を試みる。
+ * ポップアップはユーザー操作の中でしか開けないため、最初のタップを利用する。
+ * 失敗しても保存済みの接続情報（ファイルIDなど）は消さない。
+ */
+let reconnecting = false;
+let lastReconnectAt = 0;
+document.addEventListener(
+  'click',
+  async (ev) => {
+    if (reconnecting || !navigator.onLine || !clientId() || !drive.wasConnected() || drive.hasValidToken()) return;
+    if (ev.target.closest?.('#sync-btn, #banner-sync, #settings, #settings-btn')) return;
+    if (Date.now() - lastReconnectAt < 30_000) return;
+    reconnecting = true;
+    lastReconnectAt = Date.now();
+    try {
+      await drive.signIn(clientId());
+      await runSync();
+    } catch (e) {
+      console.warn('自動再接続をスキップ:', e.message);
+    } finally {
+      reconnecting = false;
+      renderStatus();
+    }
+  },
+  true,
+);
+
 // ------------------------------------------------------------ 設定
 
 const dialog = $('#settings');
@@ -367,6 +395,7 @@ $('#import-file').addEventListener('change', async (ev) => {
 // ------------------------------------------------------------ 起動
 
 window.addEventListener('online', () => {
+  if (drive.wasConnected()) drive.preloadGis();
   renderStatus();
   autoSync();
 });
@@ -383,6 +412,7 @@ if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
 
 (async () => {
   resetForm();
+  if (navigator.onLine && drive.wasConnected()) drive.preloadGis();
   lastSyncAt = await db.getMeta('lastSync');
   await reload();
   autoSync();
